@@ -1,42 +1,43 @@
-import { OpenWalletCredentials, WalletConfig, WalletHandle } from "./indy-sdk.d.ts"
-import { library } from "./ffi/mod.ts"
-import { COMMAND_HANDLE, ERROR_CODE, I32, VOID, WALLET_HANDLE } from "./ffi/primitives.ts"
+import type { OpenWalletCredentials, WalletConfig, WalletHandle } from "./indy-sdk.d.ts"
+import { allocPtr, promisify, library } from "./ffi/mod.ts"
+import { IndyError } from "./IndyError.ts"
+import { WALLET_HANDLE } from "./ffi/primitives.ts"
+import { serializeArguments } from "./ffi/serialize.ts"
 
 const capi = library.symbols
 
-const openWallet = async (config: WalletConfig, credentials: OpenWalletCredentials): Promise<WalletHandle> => {
-  const serializedConfig = new TextEncoder().encode(JSON.stringify(config))
-  const serializedCredentials = new TextEncoder().encode(JSON.stringify(credentials))
+export const getCurrentError = () => {
+  const ptr = allocPtr()
+  capi.getCurrentError(ptr)
+  return new Deno.UnsafePointerView(ptr[0]).getCString()
+}
 
-  const lala = (method: (cbPtr: bigint) => void): Promise<number> => {
-    return new Promise((resolve, reject) => {
-      const cb = new Deno.UnsafeCallback(
-        { parameters: [COMMAND_HANDLE, ERROR_CODE, WALLET_HANDLE], result: VOID } as const,
-        (_: number, err: number, response: number) => {
-          if (err) return reject(err)
-          return resolve(response)
-        }
-      )
-      method(cb.pointer)
-    })
-  }
+const createWallet = async (config: WalletConfig, credentials: OpenWalletCredentials): Promise<void> => {
+  const [serializedConfig, serializedCredentials] = serializeArguments(config, credentials)
 
-  return await lala((cb) => {
-    const err = capi.openWallet(1, serializedConfig, serializedCredentials, cb)
-    if (err) {
-      const ptr = new Uint8Array(1000)
-      capi.getCurrentError(ptr)
-      const error = new Deno.UnsafePointerView(Deno.UnsafePointer.of(ptr)).getCString()
-      return new Promise((_, reject) => reject("wooo"))
-    }
+  return await promisify([], (cb) => {
+    const err = capi.createWallet(1, serializedConfig, serializedCredentials, cb)
+    if (err) throw IndyError.handleError(err)
   })
 }
 
-//
-//
-//  const closeWallet = (wh: WalletHandle): Promise<void> => {
-//    return new Promise((resolve) => resolve())
-//  }
+const openWallet = async (config: WalletConfig, credentials: OpenWalletCredentials): Promise<WalletHandle> => {
+  const [serializedConfig, serializedCredentials] = serializeArguments(config, credentials)
+
+  return await promisify([WALLET_HANDLE], (cb) => {
+    const err = capi.openWallet(2, serializedConfig, serializedCredentials, cb)
+    if (err) throw IndyError.handleError(err)
+  })
+}
+
+const closeWallet = async (wh: WalletHandle): Promise<void> => {
+  const [serializedWh] = serializeArguments(wh)
+
+  await promisify([], (cb) => {
+    const err = capi.closeWallet(3, serializedWh, cb)
+    if (err) throw IndyError.handleError(err)
+  })
+}
 //
 //
 //  const deleteWallet = (config: WalletConfig, credentials: WalletCredentials): Promise<void> => {
@@ -494,4 +495,4 @@ const openWallet = async (config: WalletConfig, credentials: OpenWalletCredentia
 //    return new Promise((resolve) => resolve())
 //  }
 
-export const indy = { openWallet }
+export const indy = { openWallet, closeWallet, createWallet }

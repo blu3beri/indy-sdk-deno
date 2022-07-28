@@ -1,3 +1,6 @@
+import { IndyError } from "../IndyError.ts"
+import { COMMAND_HANDLE, ERROR_CODE, VOID, WALLET_HANDLE } from "./primitives.ts"
+
 export const enabledCallback = new Deno.UnsafeCallback(
   {
     parameters: ["pointer", "u32", "pointer"],
@@ -34,3 +37,21 @@ export const flushCallback = new Deno.UnsafeCallback(
     console.log(context)
   }
 )
+
+export const promisify = <Response>(
+  parameters: Array<Deno.NativeType>,
+  method: (cbPtr: bigint) => void
+): Promise<Response> => {
+  return new Promise((resolve, reject) => {
+    const cb = new Deno.UnsafeCallback(
+      { parameters: [COMMAND_HANDLE, ERROR_CODE, ...parameters], result: VOID } as const,
+      // deno-lint-ignore ban-ts-comment
+      // @ts-ignore
+      (_: number, err: number, response: Response) => {
+        if (err) return reject(IndyError.handleError(err))
+        resolve(response)
+      }
+    )
+    method(cb.pointer)
+  })
+}

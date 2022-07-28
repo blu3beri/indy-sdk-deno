@@ -1,3 +1,5 @@
+import { getCurrentError } from "./indy.ts"
+
 const errors = {
   100: "CommonInvalidParam1",
   101: "CommonInvalidParam2",
@@ -59,7 +61,21 @@ const errors = {
 }
 
 export class IndyError extends Error {
-  constructor(error: any) {
+  constructor({ number, message, backtrace }: { number: number; message: string; backtrace?: string }) {
     super()
+    this.name = errors[number as keyof typeof errors]
+    this.message = message
+    this.stack = backtrace
+  }
+
+  public static handleError(error: number) {
+    if (error === 0) return
+
+    const errorMessage = getCurrentError()
+    return {
+      number: error,
+      name: errors[error as keyof typeof errors],
+      ...JSON.parse(errorMessage),
+    }
   }
 }
